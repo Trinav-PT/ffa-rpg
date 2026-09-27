@@ -46,7 +46,7 @@ CHAR_TEMPLATES = {
         "def": 6.0,
         "spe": 10,
         "potency": 4,
-        "desc": "Deals 1.5x more damage next turn",
+        "desc": "Deals +20 flat damage next turn",
     },
     "B": {
         "hp": 95,
@@ -58,7 +58,7 @@ CHAR_TEMPLATES = {
     },
     "C": {
         "hp": 200,
-        "dmg": 7.5,
+        "dmg": 6.5,
         "def": 8.0,
         "spe": 4,
         "potency": 5,
@@ -70,7 +70,7 @@ CHAR_TEMPLATES = {
         "def": 5.5,
         "spe": 12,
         "potency": 4,
-        "desc": "Heals 30 HP next turn",
+        "desc": "Heals 20 HP next turn",
     },
 }
 
@@ -244,9 +244,6 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
 
     raw_dmg = (random.randint(0, 10) * attacker.dmg) * base_multiplier
 
-    if attacker.special_active and "Char A" in attacker.name:
-        raw_dmg *= 1.5
-
     crit_roll = random.randint(0, 3) * attacker.spe
     is_crit = (
         random.choice([True, False])
@@ -263,6 +260,10 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
         raw_dmg *= 2
 
     final_dmg = max(1.0, raw_dmg - def_mod)
+
+    # Apply flat +20 damage bonus for Char A's special after defense calculation
+    if attacker.special_active and "Char A" in attacker.name:
+        final_dmg += 20.0
 
     if defender.shield_active:
         final_dmg *= 0.5
@@ -284,11 +285,11 @@ def execute_action(actor_idx, action, target_indices, all_players):
         if "Char B" in attacker.name:
             log_messages.append(f"✨ {attacker.name}'s Special is active: 50% dodge chance!")
         elif "Char A" in attacker.name:
-            log_messages.append(f"✨ {attacker.name}'s Special is active: 1.5x damage boost!")
+            log_messages.append(f"✨ {attacker.name}'s Special is active: +20 flat damage boost!")
         elif "Char C" in attacker.name:
             log_messages.append(f"✨ {attacker.name}'s Special is active: Enhanced defense RNG!")
         elif "Char D" in attacker.name:
-            heal_amt = 30.0
+            heal_amt = 20.0
             attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
             log_messages.append(f"✨ {attacker.name}'s Special is active: Healed for **{heal_amt} HP**!")
 
