@@ -36,7 +36,6 @@ class Character:
 
     def reset_status(self):
         self.shield_active = False
-        # Special active status persists for the designated turn, then clears
 
 
 CHAR_TEMPLATES = {
@@ -198,8 +197,12 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
     return round(final_dmg, 1), is_crit
 
 
-def execute_action(attacker, action, targets, all_players):
+def execute_action(actor_idx, action, target_indices, all_players):
     log_messages = []
+    attacker = all_players[actor_idx]
+
+    if attacker.hp <= 0:
+        return log_messages
 
     # Handle Special Activation / Priming mechanics
     attacker.special_active = False
@@ -233,8 +236,8 @@ def execute_action(attacker, action, targets, all_players):
 
     # Execute Selected Move
     if action == "Attack":
-        if targets:
-            target = targets[0]
+        if target_indices:
+            target = all_players[target_indices[0]]
             if target.hp > 0:
                 if (
                     target.special_active
@@ -282,7 +285,8 @@ def execute_action(attacker, action, targets, all_players):
                 )
 
     elif action == "Spread attack (2)":
-        for t in targets:
+        for t_idx in target_indices:
+            t = all_players[t_idx]
             if t.hp > 0:
                 if (
                     t.special_active
@@ -333,22 +337,21 @@ if st.session_state.game_state == "battle":
         )
 
         if st.session_state.anim_index < len(st.session_state.anim_actions):
-            actor, action_desc, targets_to_use = st.session_state.anim_actions[
+            actor_idx, action_desc, target_indices = st.session_state.anim_actions[
                 st.session_state.anim_index
             ]
 
-            if actor is None:
+            if actor_idx is None:
                 # Round header log entry
                 st.session_state.log.append(action_desc)
             else:
-                if actor.hp > 0:
-                    action_logs = execute_action(
-                        actor,
-                        action_desc,
-                        targets_to_use,
-                        st.session_state.players,
-                    )
-                    st.session_state.log.extend(action_logs)
+                action_logs = execute_action(
+                    actor_idx,
+                    action_desc,
+                    target_indices,
+                    st.session_state.players,
+                )
+                st.session_state.log.extend(action_logs)
 
             st.session_state.anim_index += 1
             time.sleep(1.0)
@@ -381,37 +384,37 @@ if st.session_state.game_state == "battle":
             st.subheader("Your Action This Turn")
             chosen_move = st.selectbox("Select Move", player_obj.loadout)
 
-            target_options = [
-                p
-                for p in st.session_state.players
-                if p != player_obj and p.hp > 0
+            target_options_indices = [
+                i
+                for i, p in enumerate(st.session_state.players)
+                if i != 0 and p.hp > 0
             ]
-            player_targets = []
+            player_target_indices = []
 
             if chosen_move == "Attack":
-                if target_options:
-                    t = st.selectbox(
+                if target_options_indices:
+                    t_idx = st.selectbox(
                         "Select Target",
-                        target_options,
-                        format_func=lambda x: x.name,
+                        target_options_indices,
+                        format_func=lambda i: st.session_state.players[i].name,
                     )
-                    player_targets = [t]
+                    player_target_indices = [t_idx]
             elif chosen_move == "Spread attack (2)":
-                if len(target_options) >= 2:
+                if len(target_options_indices) >= 2:
                     selected_ts = st.multiselect(
                         "Select exactly 2 targets",
-                        target_options,
-                        format_func=lambda x: x.name,
+                        target_options_indices,
+                        format_func=lambda i: st.session_state.players[i].name,
                         max_selections=2,
                     )
-                    player_targets = selected_ts
-                elif len(target_options) == 1:
+                    player_target_indices = selected_ts
+                elif len(target_options_indices) == 1:
                     st.info(
                         "Only 1 opponent left! They will be targeted."
                     )
-                    player_targets = target_options
+                    player_target_indices = target_options_indices
                 else:
-                    player_targets = []
+                    player_target_indices = []
 
             button_label = "Submit Move & Execute Round"
         else:
@@ -419,21 +422,21 @@ if st.session_state.game_state == "battle":
                 "💀 You have been defeated! You are now spectating the remainder of the battle."
             )
             chosen_move = None
-            player_targets = []
+            player_target_indices = []
             button_label = "Simulate Next AI Round"
 
         if st.button(button_label, type="primary", use_container_width=True):
             if (
                 player_obj.hp > 0
                 and chosen_move == "Spread attack (2)"
-                and len(player_targets) != min(2, len(target_options))
+                and len(player_target_indices) != min(2, len(target_options_indices))
             ):
                 st.error(
                     "Please select exactly **2 targets** for your Spread Attack (2)!"
                 )
             else:
-                living_combatants = [
-                    p for p in st.session_state.players if p.hp > 0
+                living_combatants_indices = [
+                    i for i, p in enumerate(st.session_state.players) if p.hp > 0
                 ]
                 round_actions = []
 
@@ -443,33 +446,34 @@ if st.session_state.game_state == "battle":
 
                 # Determine actions for everyone first to check priority
                 actor_action_pairs = []
-                for actor in living_combatants:
+                for actor_idx in living_combatants_indices:
+                    actor = st.session_state.players[actor_idx]
                     if actor.is_player:
                         action_to_take = chosen_move
-                        targets_to_use = player_targets
+                        target_indices_to_use = player_target_indices
                     else:
                         action_to_take = random.choice(actor.loadout)
-                        valid_ai_targets = [
-                            p
-                            for p in st.session_state.players
-                            if p != actor and p.hp > 0
+                        valid_ai_target_indices = [
+                            i
+                            for i, p in enumerate(st.session_state.players)
+                            if i != actor_idx and p.hp > 0
                         ]
                         if action_to_take == "Attack":
-                            targets_to_use = (
-                                [random.choice(valid_ai_targets)]
-                                if valid_ai_targets
+                            target_indices_to_use = (
+                                [random.choice(valid_ai_target_indices)]
+                                if valid_ai_target_indices
                                 else []
                             )
                         elif action_to_take == "Spread attack (2)":
-                            targets_to_use = random.sample(
-                                valid_ai_targets,
-                                min(2, len(valid_ai_targets)),
+                            target_indices_to_use = random.sample(
+                                valid_ai_target_indices,
+                                min(2, len(valid_ai_target_indices)),
                             )
                         else:
-                            targets_to_use = []
+                            target_indices_to_use = []
 
                     actor_action_pairs.append(
-                        (actor, action_to_take, targets_to_use)
+                        (actor_idx, action_to_take, target_indices_to_use)
                     )
 
                 # Sort: Shield moves ALWAYS go first (priority 1 vs 0), tie-broken by speed
@@ -477,7 +481,7 @@ if st.session_state.game_state == "battle":
                 actor_action_pairs.sort(
                     key=lambda item: (
                         1 if item[1] == "Shield" else 0,
-                        item[0].spe,
+                        st.session_state.players[item[0]].spe,
                     ),
                     reverse=True,
                 )
@@ -490,8 +494,8 @@ if st.session_state.game_state == "battle":
                     )
                 )
 
-                for actor, action_to_take, targets_to_use in actor_action_pairs:
-                    round_actions.append((actor, action_to_take, targets_to_use))
+                for actor_idx, action_to_take, target_indices_to_use in actor_action_pairs:
+                    round_actions.append((actor_idx, action_to_take, target_indices_to_use))
 
                 st.session_state.anim_actions = round_actions
                 st.session_state.anim_index = 0
