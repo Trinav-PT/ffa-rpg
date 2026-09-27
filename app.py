@@ -108,31 +108,36 @@ if st.session_state.game_state == "setup":
         st.subheader("Team 1")
         t1_p1_name = st.selectbox("Team 1, Player 1", ["Gemini", "ChatGPT", "Perplexity", "DeepSeek"], index=0, key="t1_p1_n")
         t1_p1_class = st.selectbox("T1P1 Class", ["A", "B", "C", "D"], index=1, key="t1_p1_c")
+        t1_p1_loadout = st.multiselect("T1P1 Loadout", ALL_MOVES, default=["Attack", "Shield", "Heal"], key="t1_p1_l")
         
+        st.divider()
         t1_p2_name = st.selectbox("Team 1, Player 2", ["ChatGPT", "Gemini", "Perplexity", "DeepSeek"], index=1, key="t1_p2_n")
         t1_p2_class = st.selectbox("T1P2 Class", ["A", "B", "C", "D"], index=1, key="t1_p2_c")
+        t1_p2_loadout = st.multiselect("T1P2 Loadout", ALL_MOVES, default=["Attack", "Shield", "Heal"], key="t1_p2_l")
 
     with col2:
         st.subheader("Team 2")
         t2_p1_name = st.selectbox("Team 2, Player 1", ["Perplexity", "Gemini", "ChatGPT", "DeepSeek"], index=0, key="t2_p1_n")
         t2_p1_class = st.selectbox("T2P1 Class", ["A", "B", "C", "D"], index=0, key="t2_p1_c")
+        t2_p1_loadout = st.multiselect("T2P1 Loadout", ALL_MOVES, default=["Attack", "Shield", "Heal"], key="t2_p1_l")
         
+        st.divider()
         t2_p2_name = st.selectbox("Team 2, Player 2", ["DeepSeek", "Gemini", "ChatGPT", "Perplexity"], index=0, key="t2_p2_n")
         t2_p2_class = st.selectbox("T2P2 Class", ["A", "B", "C", "D"], index=0, key="t2_p2_c")
+        t2_p2_loadout = st.multiselect("T2P2 Loadout", ALL_MOVES, default=["Attack", "Shield", "Heal"], key="t2_p2_l")
 
     st.divider()
-    st.subheader("Configure Default Loadouts (Attack, Shield, Heal)")
     
     if st.button("Start 2v2 Tag Team Match", type="primary", use_container_width=True):
         configs = [
-            (t1_p1_name, t1_p1_class, True),
-            (t1_p2_name, t1_p2_class, True),
-            (t2_p1_name, t2_p1_class, False),
-            (t2_p2_name, t2_p2_class, False),
+            (t1_p1_name, t1_p1_class, t1_p1_loadout, True),
+            (t1_p2_name, t1_p2_class, t1_p2_loadout, True),
+            (t2_p1_name, t2_p1_class, t2_p1_loadout, False),
+            (t2_p2_name, t2_p2_class, t2_p2_loadout, False),
         ]
         
         players_list = []
-        for name, char_key, is_t1 in configs:
+        for name, char_key, loadout, is_t1 in configs:
             c_data = CHAR_TEMPLATES[char_key]
             c_obj = Character(
                 name=f"{name} (Char {char_key})",
@@ -143,7 +148,7 @@ if st.session_state.game_state == "setup":
                 potency=c_data["potency"],
                 is_player=is_t1,
             )
-            c_obj.loadout = ["Attack", "Shield", "Heal"]
+            c_obj.loadout = loadout if loadout else ["Attack"]
             players_list.append(c_obj)
 
         st.session_state.players = players_list
