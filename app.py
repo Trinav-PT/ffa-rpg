@@ -4,7 +4,7 @@ import streamlit as st
 
 # Page Config
 st.set_page_config(
-    page_title="FFA Streamlit RPG", page_icon="⚔️", layout="wide"
+    page_title="2v2 Tag Team RPG", page_icon="⚔️", layout="wide"
 )
 
 # --- GAME DATA & CLASSES ---
@@ -27,9 +27,7 @@ class Character:
         # Status modifiers
         self.shield_active = False
         self.special_active = False  # Active for the current turn
-        self.special_primed = (
-            False  # Queued up to activate on the upcoming turn
-        )
+        self.special_primed = False  # Queued up to activate on the upcoming turn
         self.boost_active = False  # Increases crit chance by 15% for the next turn
 
         # Loadout moves chosen before battle
@@ -41,11 +39,11 @@ class Character:
 
 CHAR_TEMPLATES = {
     "A": {
-        "hp": 145,
-        "dmg": 7.0,
+        "hp": 150,
+        "dmg": 7.5,
         "def": 6.0,
         "spe": 10,
-        "potency": 4,
+        "potency": 3,
         "desc": "Deals +20 flat damage next turn",
     },
     "B": {
@@ -53,11 +51,11 @@ CHAR_TEMPLATES = {
         "dmg": 8.0,
         "def": 5.0,
         "spe": 18,
-        "potency": 2,
+        "potency": 3,
         "desc": "50% chance to avoid all attacks next turn",
     },
     "C": {
-        "hp": 200,
+        "hp": 195,
         "dmg": 6.5,
         "def": 8.0,
         "spe": 4,
@@ -93,146 +91,69 @@ if "game_state" not in st.session_state:
     st.session_state.log = []
     st.session_state.anim_actions = []
     st.session_state.anim_index = 0
-    st.session_state.manual_input_index = 0  # Tracks which manual player is picking a move
-    st.session_state.temp_round_actions = {}  # Stores chosen moves per player index
+    st.session_state.manual_input_index = 0
+    st.session_state.temp_round_actions = {}
 
 
 # --- UI: SETUP SCREEN ---
 if st.session_state.game_state == "setup":
-    st.title("⚔️ 4-Player FFA Streamlit RPG")
+    st.title("⚔️ Season 2: 2v2 Tag Team Chaos")
     st.markdown(
-        "Welcome! Choose your battle mode, character templates, and loadouts."
+        "Welcome to Tag Team mode! Configure your team's classes, allies, and loadouts."
     )
 
-    game_mode = st.radio(
-        "Select Game Mode",
-        [
-            "Singleplayer vs AI (eeny, meeny, teeny)",
-            "4-Player Manual (Gemini vs ChatGPT vs Perplexity vs DeepSeek)",
-        ],
-    )
+    col1, col2 = st.columns(2)
 
-    if "Singleplayer" in game_mode:
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.subheader("Select Your Character")
-            player_char_key = st.selectbox(
-                "Character",
-                ["A", "B", "C", "D"],
-                format_func=lambda x: f"Character {x} (HP: {CHAR_TEMPLATES[x]['hp']}, SPE: {CHAR_TEMPLATES[x]['spe']})",
+    with col1:
+        st.subheader("Team 1")
+        t1_p1_name = st.selectbox("Team 1, Player 1", ["Gemini", "ChatGPT", "Perplexity", "DeepSeek"], index=0, key="t1_p1_n")
+        t1_p1_class = st.selectbox("T1P1 Class", ["A", "B", "C", "D"], index=1, key="t1_p1_c")
+        
+        t1_p2_name = st.selectbox("Team 1, Player 2", ["ChatGPT", "Gemini", "Perplexity", "DeepSeek"], index=1, key="t1_p2_n")
+        t1_p2_class = st.selectbox("T1P2 Class", ["A", "B", "C", "D"], index=1, key="t1_p2_c")
+
+    with col2:
+        st.subheader("Team 2")
+        t2_p1_name = st.selectbox("Team 2, Player 1", ["Perplexity", "Gemini", "ChatGPT", "DeepSeek"], index=0, key="t2_p1_n")
+        t2_p1_class = st.selectbox("T2P1 Class", ["A", "B", "C", "D"], index=0, key="t2_p1_c")
+        
+        t2_p2_name = st.selectbox("Team 2, Player 2", ["DeepSeek", "Gemini", "ChatGPT", "Perplexity"], index=0, key="t2_p2_n")
+        t2_p2_class = st.selectbox("T2P2 Class", ["A", "B", "C", "D"], index=0, key="t2_p2_c")
+
+    st.divider()
+    st.subheader("Configure Default Loadouts (Attack, Shield, Heal)")
+    
+    if st.button("Start 2v2 Tag Team Match", type="primary", use_container_width=True):
+        configs = [
+            (t1_p1_name, t1_p1_class, True),
+            (t1_p2_name, t1_p2_class, True),
+            (t2_p1_name, t2_p1_class, False),
+            (t2_p2_name, t2_p2_class, False),
+        ]
+        
+        players_list = []
+        for name, char_key, is_t1 in configs:
+            c_data = CHAR_TEMPLATES[char_key]
+            c_obj = Character(
+                name=f"{name} (Char {char_key})",
+                hp=c_data["hp"],
+                dmg=c_data["dmg"],
+                defense=c_data["def"],
+                spe=c_data["spe"],
+                potency=c_data["potency"],
+                is_player=is_t1,
             )
-            p_template = CHAR_TEMPLATES[player_char_key]
-            st.info(
-                f"""
-            * **HP:** {p_template['hp']}
-            * **DMG:** {p_template['dmg']} | **DEF:** {p_template['def']} | **SPE:** {p_template['spe']}
-            * **Special ({p_template['potency']} turns CD):** {p_template['desc']}
-            """
-            )
+            c_obj.loadout = ["Attack", "Shield", "Heal"]
+            players_list.append(c_obj)
 
-        with col2:
-            st.subheader("Choose 3 Battle Moves")
-            selected_moves = []
-            for move in ALL_MOVES:
-                if st.checkbox(move, value=(move in ["Attack", "Shield", "Heal"]), key=f"setup_{move}"):
-                    selected_moves.append(move)
-
-        if st.button("Start Battle", type="primary", use_container_width=True):
-            if len(selected_moves) != 3:
-                st.error("Please select exactly **3** moves to bring into battle!")
-            else:
-                p_data = CHAR_TEMPLATES[player_char_key]
-                player = Character(
-                    name=f"Player (Char {player_char_key})",
-                    hp=p_data["hp"],
-                    dmg=p_data["dmg"],
-                    defense=p_data["def"],
-                    spe=p_data["spe"],
-                    potency=p_data["potency"],
-                    is_player=True,
-                )
-                player.loadout = selected_moves
-
-                ai_names = ["eeny", "meeny", "teeny"]
-                ai_choices = ["A", "B", "C", "D"]
-                ai_list = []
-                for name in ai_names:
-                    char_key = random.choice(ai_choices)
-                    c_data = CHAR_TEMPLATES[char_key]
-                    ai = Character(
-                        name=f"{name.capitalize()} (Char {char_key})",
-                        hp=c_data["hp"],
-                        dmg=c_data["dmg"],
-                        defense=c_data["def"],
-                        spe=c_data["spe"],
-                        potency=c_data["potency"],
-                        is_player=False,
-                    )
-                    ai.loadout = random.sample(ALL_MOVES, 3)
-                    ai_list.append(ai)
-
-                st.session_state.players = [player] + ai_list
-                st.session_state.game_state = "battle"
-                st.session_state.battle_phase = "input"
-                st.session_state.round_num = 1
-                st.session_state.log = ["Battle started! May the best fighter win."]
-                st.session_state.manual_input_index = 0
-                st.session_state.temp_round_actions = {}
-                st.rerun()
-    else:
-        st.subheader("Configure 4 Manual Combatants & Their Loadouts")
-        combatant_names = ["Gemini", "ChatGPT", "Perplexity", "DeepSeek"]
-        manual_configs = []
-
-        cols_cfg = st.columns(4)
-        for i, name in enumerate(combatant_names):
-            with cols_cfg[i]:
-                st.markdown(f"### {name}")
-                char_choice = st.selectbox(
-                    f"Class", ["A", "B", "C", "D"], key=f"manual_class_{i}"
-                )
-                st.caption(f"HP: {CHAR_TEMPLATES[char_choice]['hp']} | SPE: {CHAR_TEMPLATES[char_choice]['spe']}")
-                
-                st.markdown("**Choose 3 Moves:**")
-                player_moves = []
-                for move in ALL_MOVES:
-                    default_checked = (move in ["Attack", "Shield", "Heal"]) if i != 1 else (move in ["Attack", "Shield", "Spread attack (3)"])
-                    if st.checkbox(move, value=default_checked, key=f"manual_move_{i}_{move}"):
-                        player_moves.append(move)
-                
-                manual_configs.append((name, char_choice, player_moves))
-
-        if st.button("Start 4-Way Manual Battle", type="primary", use_container_width=True):
-            invalid_loadout = False
-            for name, char_key, p_moves in manual_configs:
-                if len(p_moves) != 3:
-                    st.error(f"{name} must have exactly **3** moves selected (currently has {len(p_moves)}).")
-                    invalid_loadout = True
-
-            if not invalid_loadout:
-                players_list = []
-                for name, char_key, p_moves in manual_configs:
-                    c_data = CHAR_TEMPLATES[char_key]
-                    c_obj = Character(
-                        name=f"{name} (Char {char_key})",
-                        hp=c_data["hp"],
-                        dmg=c_data["dmg"],
-                        defense=c_data["def"],
-                        spe=c_data["spe"],
-                        potency=c_data["potency"],
-                        is_player=True,
-                    )
-                    c_obj.loadout = p_moves
-                    players_list.append(c_obj)
-
-                st.session_state.players = players_list
-                st.session_state.game_state = "battle"
-                st.session_state.battle_phase = "input"
-                st.session_state.round_num = 1
-                st.session_state.log = ["4-Way AI Deathmatch started! Choose your moves wisely."]
-                st.session_state.manual_input_index = 0
-                st.session_state.temp_round_actions = {}
-                st.rerun()
+        st.session_state.players = players_list
+        st.session_state.game_state = "battle"
+        st.session_state.battle_phase = "input"
+        st.session_state.round_num = 1
+        st.session_state.log = ["2v2 Tag Team match started! Team 1 vs Team 2."]
+        st.session_state.manual_input_index = 0
+        st.session_state.temp_round_actions = {}
+        st.rerun()
 
 
 # --- HELPER FUNCTIONS FOR COMBAT ---
@@ -261,7 +182,6 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
 
     final_dmg = max(1.0, raw_dmg - def_mod)
 
-    # Apply flat +20 damage bonus for Char A's special after defense calculation
     if attacker.special_active and "Char A" in attacker.name:
         final_dmg += 20.0
 
@@ -318,60 +238,67 @@ def execute_action(actor_idx, action, target_indices, all_players):
         log_messages.append(f"🛡️ {attacker.name} raised a Shield (incoming damage halved this turn).")
 
     elif action == "Heal":
-        heal_amt = round(attacker.max_hp * 0.2, 1)
-        attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
-        log_messages.append(f"💚 {attacker.name} healed for **{heal_amt} HP**.")
+        if target_indices:
+            target = all_players[target_indices[0]]
+        else:
+            target = attacker
+        
+        heal_amt = round(target.max_hp * 0.2, 1)
+        target.hp = min(target.max_hp, target.hp + heal_amt)
+        if target == attacker:
+            log_messages.append(f"💚 {attacker.name} healed themselves for **{heal_amt} HP**.")
+        else:
+            log_messages.append(f"💚 {attacker.name} healed their ally {target.name} for **{heal_amt} HP**.")
 
     elif action == "Boost":
-        attacker.boost_active = True
-        log_messages.append(f"🔮 {attacker.name} uses Boost, increasing critical strike chance by 15% for next turn.")
-
-    elif action == "Spread attack (3)":
-        for p in all_players:
-            if p != attacker and p.hp > 0:
-                if p.special_active and "Char B" in p.name and random.random() < 0.5:
-                    log_messages.append(f"💨 {p.name} avoided {attacker.name}'s spread attack!")
-                    continue
-                dmg, crit = calculate_damage(attacker, p, base_multiplier=1 / 3)
-                p.hp = max(0.0, p.hp - dmg)
-                log_messages.append(f"💥 {attacker.name} hit {p.name} with Spread (3) for **{dmg} damage**.")
-
-    elif action == "Spread attack (2)":
-        for t_idx in target_indices:
-            t = all_players[t_idx]
-            if t.hp > 0:
-                if t.special_active and "Char B" in t.name and random.random() < 0.5:
-                    log_messages.append(f"💨 {t.name} avoided {attacker.name}'s spread attack!")
-                    continue
-                dmg, crit = calculate_damage(attacker, t, base_multiplier=1 / 2)
-                t.hp = max(0.0, t.hp - dmg)
-                log_messages.append(f"💥 {attacker.name} hit {t.name} with Spread (2) for **{dmg} damage**.")
+        if target_indices:
+            target = all_players[target_indices[0]]
+        else:
+            target = attacker
+            
+        target.boost_active = True
+        if target == attacker:
+            log_messages.append(f"🔮 {attacker.name} boosts themselves for next turn.")
+        else:
+            log_messages.append(f"🔮 {attacker.name} boosts their ally {target.name} for next turn.")
 
     return log_messages
 
 
 # --- UI: BATTLE SCREEN ---
 if st.session_state.game_state == "battle":
-    st.title(f"⚔️ FFA Battle Arena — Round {st.session_state.round_num}")
+    st.title(f"⚔️ Tag Team Arena — Round {st.session_state.round_num}")
 
-    cols = st.columns(len(st.session_state.players))
-    for idx, p in enumerate(st.session_state.players):
-        with cols[idx]:
-            st.markdown(f"### {p.name}")
-            st.markdown(f"**HP:** `{p.hp}/{p.max_hp}`")
-            st.progress(float(max(0.0, p.hp) / p.max_hp))
-            status_txt = (
-                "✨ SPECIAL ACTIVE"
-                if p.special_active
-                else ("⚡ PRIMING SPECIAL" if p.special_primed else "Ready")
-            )
-            st.caption(f"SPE: {p.spe} | CD: {p.potency_cooldown}\n{status_txt}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Team 1")
+        t1_cols = st.columns(2)
+        for i in [0, 1]:
+            p = st.session_state.players[i]
+            with t1_cols[i]:
+                st.markdown(f"**{p.name}**")
+                st.markdown(f"HP: `{p.hp}/{p.max_hp}`")
+                st.progress(float(max(0.0, p.hp) / p.max_hp))
+                status_txt = "✨ SPECIAL" if p.special_active else ("⚡ PRIMING" if p.special_primed else "Ready")
+                st.caption(f"SPE: {p.spe} | CD: {p.potency_cooldown} | {status_txt}")
+
+    with col2:
+        st.subheader("Team 2")
+        t2_cols = st.columns(2)
+        for idx, i in enumerate([2, 3]):
+            p = st.session_state.players[i]
+            with t2_cols[idx]:
+                st.markdown(f"**{p.name}**")
+                st.markdown(f"HP: `{p.hp}/{p.max_hp}`")
+                st.progress(float(max(0.0, p.hp) / p.max_hp))
+                status_txt = "✨ SPECIAL" if p.special_active else ("⚡ PRIMING" if p.special_primed else "Ready")
+                st.caption(f"SPE: {p.spe} | CD: {p.potency_cooldown} | {status_txt}")
 
     st.divider()
 
     # --- ANIMATION PHASE ---
     if st.session_state.battle_phase == "animating":
-        st.info("🎬 Resolving round actions sequentially in priority/speed order...")
+        st.info("🎬 Resolving round actions sequentially...")
 
         if st.session_state.anim_index < len(st.session_state.anim_actions):
             actor_idx, action_desc, target_indices = st.session_state.anim_actions[
@@ -398,8 +325,10 @@ if st.session_state.game_state == "battle":
             )
             st.session_state.log.append(hp_summary)
 
-            alive_combatants = [p for p in st.session_state.players if p.hp > 0]
-            if len(alive_combatants) <= 1:
+            t1_alive = any(p.hp > 0 for p in st.session_state.players[:2])
+            t2_alive = any(p.hp > 0 for p in st.session_state.players[2:])
+
+            if not t1_alive or not t2_alive:
                 st.session_state.game_state = "game_over"
             else:
                 st.session_state.round_num += 1
@@ -410,12 +339,12 @@ if st.session_state.game_state == "battle":
 
     # --- INPUT PHASE ---
     elif st.session_state.battle_phase == "input":
-        alive_players = [p for p in st.session_state.players if p.hp > 0]
-        if len(alive_players) <= 1:
+        t1_alive = any(p.hp > 0 for p in st.session_state.players[:2])
+        t2_alive = any(p.hp > 0 for p in st.session_state.players[2:])
+        if not t1_alive or not t2_alive:
             st.session_state.game_state = "game_over"
             st.rerun()
 
-        # Advance manual input index until it points to a living player who hasn't submitted yet
         while (
             st.session_state.manual_input_index < len(st.session_state.players)
             and (
@@ -457,45 +386,39 @@ if st.session_state.game_state == "battle":
 
         st.subheader(f"🎮 Turn Input: {current_actor.name}")
         
-        # Move choice outside form so target pickers update live
         chosen_move = st.selectbox("Select Move", current_actor.loadout, key=f"move_{current_actor_idx}")
 
-        target_options_indices = [
-            i for i, p in enumerate(st.session_state.players) if i != current_actor_idx and p.hp > 0
-        ]
         target_indices = []
+        is_team_1 = current_actor_idx < 2
+        ally_indices = [0, 1] if is_team_1 else [2, 3]
+        enemy_indices = [2, 3] if is_team_1 else [0, 1]
 
         if chosen_move == "Attack":
-            if target_options_indices:
-                t_idx = st.selectbox(
-                    "Select Target",
-                    target_options_indices,
-                    format_func=lambda i: st.session_state.players[i].name,
-                    key=f"target_atk_{current_actor_idx}"
-                )
-                target_indices = [t_idx]
-        elif chosen_move == "Spread attack (2)":
-            if len(target_options_indices) >= 2:
-                selected_ts = st.multiselect(
-                    "Select exactly 2 targets",
-                    target_options_indices,
-                    format_func=lambda i: st.session_state.players[i].name,
-                    max_selections=2,
-                    key=f"target_sp2_{current_actor_idx}"
-                )
-                target_indices = selected_ts
-            elif len(target_options_indices) == 1:
-                st.info("Only 1 opponent left! They will be targeted automatically.")
-                target_indices = target_options_indices
+            valid_enemies = [i for i in enemy_indices if st.session_state.players[i].hp > 0]
+            if not valid_enemies:
+                valid_enemies = [i for i in enemy_indices]
+            t_idx = st.selectbox(
+                "Select Target Enemy",
+                valid_enemies,
+                format_func=lambda i: st.session_state.players[i].name,
+                key=f"target_atk_{current_actor_idx}"
+            )
+            target_indices = [t_idx]
+        elif chosen_move in ["Heal", "Boost"]:
+            valid_allies = [i for i in ally_indices if st.session_state.players[i].hp > 0]
+            t_idx = st.selectbox(
+                "Select Target Ally",
+                valid_allies,
+                format_func=lambda i: st.session_state.players[i].name,
+                key=f"target_support_{current_actor_idx}"
+            )
+            target_indices = [t_idx]
 
         with st.form(key=f"input_form_{current_actor_idx}"):
             submitted = st.form_submit_button("Lock In Move", type="primary")
             if submitted:
-                if chosen_move == "Spread attack (2)" and len(target_indices) != min(2, len(target_options_indices)):
-                    st.error("Please select exactly **2 targets** for your Spread Attack (2)!")
-                else:
-                    st.session_state.temp_round_actions[current_actor_idx] = (chosen_move, target_indices)
-                    st.rerun()
+                st.session_state.temp_round_actions[current_actor_idx] = (chosen_move, target_indices)
+                st.rerun()
 
     with st.expander("📜 Battle Log", expanded=True):
         for log_entry in reversed(st.session_state.log[-15:]):
@@ -503,16 +426,17 @@ if st.session_state.game_state == "battle":
 
 # --- UI: GAME OVER SCREEN ---
 if st.session_state.game_state == "game_over":
-    st.title("🏆 Battle Concluded!")
+    st.title("🏆 Tag Team Battle Concluded!")
 
-    alive_combatants = [p for p in st.session_state.players if p.hp > 0]
+    t1_alive = any(p.hp > 0 for p in st.session_state.players[:2])
+    t2_alive = any(p.hp > 0 for p in st.session_state.players[2:])
 
-    if len(alive_combatants) == 1:
-        st.success(f"🎉 **{alive_combatants[0].name}** emerged victorious in the Free-For-All!")
-    elif alive_combatants:
-        st.info("Multiple fighters survived!")
+    if t1_alive and not t2_alive:
+        st.success("🎉 **Team 1** emerges victorious!")
+    elif t2_alive and not t1_alive:
+        st.success("🎉 **Team 2** emerges victorious!")
     else:
-        st.warning("It's a draw! Everyone was defeated simultaneously.")
+        st.warning("It's a draw!")
 
     if st.button("Play Again", type="primary"):
         st.session_state.game_state = "setup"
