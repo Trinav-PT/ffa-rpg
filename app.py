@@ -354,7 +354,12 @@ if st.session_state.game_state == "battle":
             time.sleep(1.0)
             st.rerun()
         else:
-            # Animation finished for this round
+            # Animation finished for this round — Append end-of-round HP status summary
+            hp_summary = "   📋 End of Round HP: " + ", ".join(
+                [f"{p.name.split(' (')[0]}: {p.hp}/{p.max_hp}" for p in st.session_state.players]
+            )
+            st.session_state.log.append(hp_summary)
+
             alive_combatants = [
                 p for p in st.session_state.players if p.hp > 0
             ]
