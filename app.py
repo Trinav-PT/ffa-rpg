@@ -19,7 +19,8 @@ class Character:
         self.defense = defense
         self.spe = spe
         self.max_potency = potency
-        self.potency_cooldown = 0
+        # Start on full cooldown so special cannot be used on the very first turn
+        self.potency_cooldown = potency
         self.is_player = is_player
 
         # Status modifiers for active turn
@@ -36,7 +37,7 @@ class Character:
 
 CHAR_TEMPLATES = {
     "A": {
-        "hp": 30,
+        "hp": 25,
         "dmg": 7.0,
         "def": 6.0,
         "spe": 10,
@@ -44,7 +45,7 @@ CHAR_TEMPLATES = {
         "desc": "Deals 1.5x more damage this turn",
     },
     "B": {
-        "hp": 15,
+        "hp": 45,
         "dmg": 8.0,
         "def": 5.0,
         "spe": 18,
@@ -52,7 +53,7 @@ CHAR_TEMPLATES = {
         "desc": "50% chance to avoid all attacks this turn",
     },
     "C": {
-        "hp": 45,
+        "hp": 65,
         "dmg": 7.5,
         "def": 8.0,
         "spe": 4,
@@ -82,7 +83,7 @@ if "game_state" not in st.session_state:
 if st.session_state.game_state == "setup":
     st.title("⚔️ 4-Player FFA Streamlit RPG")
     st.markdown(
-        "Welcome! Choose your character, pick 3 battle moves, and battle 3 AI opponents in a simultaneous turn-based free-for-all deathmatch."
+        "Welcome! Choose your character, pick 3 battle moves, and battle eeny, meeny, and teeny in a simultaneous turn-based free-for-all."
     )
 
     col1, col2 = st.columns([1, 1])
@@ -111,11 +112,7 @@ if st.session_state.game_state == "setup":
             if st.checkbox(move, value=(move in ["Attack", "Shield", "Heal"])):
                 selected_moves.append(move)
 
-    if st.button(
-        "Start Battle",
-        type="primary",
-        use_container_width=True,
-    ):
+    if st.button("Start Battle", type="primary", use_container_width=True):
         if len(selected_moves) != 3:
             st.error("Please select exactly **3** moves to bring into battle!")
         else:
@@ -132,14 +129,15 @@ if st.session_state.game_state == "setup":
             )
             player.loadout = selected_moves
 
-            # Setup 3 AI Opponents (randomly picked from A, B, C)
+            # Setup AI Opponents: eeny, meeny, teeny
+            ai_names = ["eeny", "meeny", "teeny"]
             ai_choices = ["A", "B", "C"]
             ai_list = []
-            for i in range(1, 4):
+            for name in ai_names:
                 char_key = random.choice(ai_choices)
                 c_data = CHAR_TEMPLATES[char_key]
                 ai = Character(
-                    name=f"AI {i} (Char {char_key})",
+                    name=f"{name.capitalize()} (Char {char_key})",
                     hp=c_data["hp"],
                     dmg=c_data["dmg"],
                     defense=c_data["def"],
@@ -291,11 +289,11 @@ def execute_action(attacker, action, targets, all_players):
 if st.session_state.game_state == "battle":
     st.title(f"⚔️ FFA Battle Arena — Round {st.session_state.round_num}")
 
-    # Check Win/Loss conditions
+    # Check Win/Loss conditions (Game ends when <= 1 combatant remains overall)
     alive_players = [p for p in st.session_state.players if p.hp > 0]
     player_obj = st.session_state.players[0]
 
-    if len(alive_players) <= 1 or player_obj.hp <= 0:
+    if len(alive_players) <= 1:
         st.session_state.game_state = "game_over"
         st.rerun()
 
@@ -310,40 +308,63 @@ if st.session_state.game_state == "battle":
 
     st.divider()
 
-    # Player Turn Input Controls
-    st.subheader("Your Action This Turn")
-    chosen_move = st.selectbox("Select Move", player_obj.loadout)
+    # Check if player is alive or defeated (Spectator Mode)
+    if player_obj.hp > 0:
+        # Player Turn Input Controls
+        st.subheader("Your Action This Turn")
+        chosen_move = st.selectbox("Select Move", player_obj.loadout)
 
-    target_options = [
-        p for p in st.session_state.players if p != player_obj and p.hp > 0
-    ]
-    player_targets = []
+        target_options = [
+            p for p in st.session_state.players if p != player_obj and p.hp > 0
+        ]
+        player_targets = []
 
-    if chosen_move == "Attack":
-        if target_options:
-            t = st.selectbox("Select Target", target_options, format_func=lambda x: x.name)
-            player_targets = [t]
-    elif chosen_move == "Spread attack (2)":
-        if len(target_options) >= 2:
-            selected_ts = st.multiselect(
-                "Select exactly 2 targets",
-                target_options,
-                format_func=lambda x: x.name,
-                max_selections=2,
+        if chosen_move == "Attack":
+            if target_options:
+                t = st.selectbox(
+                    "Select Target",
+                    target_options,
+                    format_func=lambda x: x.name,
+                )
+                player_targets = [t]
+        elif chosen_move == "Spread attack (2)":
+            if len(target_options) >= 2:
+                selected_ts = st.multiselect(
+                    "Select exactly 2 targets",
+                    target_options,
+                    format_func=lambda x: x.name,
+                    max_selections=2,
+                )
+                player_targets = selected_ts
+            elif len(target_options) == 1:
+                st.info("Only 1 opponent left! They will be targeted.")
+                player_targets = target_options
+            else:
+                player_targets = []
+
+        button_label = "Submit Move & Execute Round"
+    else:
+        st.warning(
+            "💀 You have been defeated! You are now spectating the remainder of the battle."
+        )
+        chosen_move = None
+        player_targets = []
+        button_label = "Simulate Next AI Round"
+
+    if st.button(button_label, type="primary", use_container_width=True):
+        if (
+            player_obj.hp > 0
+            and chosen_move == "Spread attack (2)"
+            and len(player_targets) != min(2, len(target_options))
+        ):
+            st.error(
+                "Please select exactly **2 targets** for your Spread Attack (2)!"
             )
-            player_targets = selected_ts
-        elif len(target_options) == 1:
-            st.info("Only 1 opponent left! They will be targeted.")
-            player_targets = target_options
         else:
-            player_targets = []
-
-    if st.button("Submit Move & Execute Round", type="primary", use_container_width=True):
-        if chosen_move == "Spread attack (2)" and len(player_targets) != min(2, len(target_options)):
-            st.error("Please select exactly **2 targets** for your Spread Attack (2)!")
-        else:
-            # Prepare turn queue for the whole round based on SPE (Shuffled first for random coin-toss tie break)
-            living_combatants = [p for p in st.session_state.players if p.hp > 0]
+            # Prepare turn queue for the whole round based on SPE
+            living_combatants = [
+                p for p in st.session_state.players if p.hp > 0
+            ]
             random.shuffle(living_combatants)
             living_combatants.sort(key=lambda x: x.spe, reverse=True)
 
@@ -362,20 +383,33 @@ if st.session_state.game_state == "battle":
                     action_to_take = chosen_move
                     targets_to_use = player_targets
                 else:
-                    # AI logic
+                    # AI logic for eeny, meeny, teeny
                     action_to_take = random.choice(actor.loadout)
                     valid_ai_targets = [
-                        p for p in st.session_state.players if p != actor and p.hp > 0
+                        p
+                        for p in st.session_state.players
+                        if p != actor and p.hp > 0
                     ]
                     if action_to_take == "Attack":
-                        targets_to_use = [random.choice(valid_ai_targets)] if valid_ai_targets else []
+                        targets_to_use = (
+                            [random.choice(valid_ai_targets)]
+                            if valid_ai_targets
+                            else []
+                        )
                     elif action_to_take == "Spread attack (2)":
-                        targets_to_use = random.sample(valid_ai_targets, min(2, len(valid_ai_targets)))
+                        targets_to_use = random.sample(
+                            valid_ai_targets, min(2, len(valid_ai_targets))
+                        )
                     else:
                         targets_to_use = []
 
                 # Run action
-                action_logs = execute_action(actor, action_to_take, targets_to_use, st.session_state.players)
+                action_logs = execute_action(
+                    actor,
+                    action_to_take,
+                    targets_to_use,
+                    st.session_state.players,
+                )
                 round_logs.extend(action_logs)
 
             st.session_state.log.extend(round_logs)
@@ -392,10 +426,19 @@ if st.session_state.game_state == "game_over":
     st.title("🏆 Battle Concluded!")
 
     player_obj = st.session_state.players[0]
+    alive_combatants = [p for p in st.session_state.players if p.hp > 0]
+
     if player_obj.hp > 0:
-        st.success("Congratulations! You emerged victorious in the Free-For-All!")
+        st.success(
+            "Congratulations! You emerged victorious in the Free-For-All!"
+        )
+    elif alive_combatants:
+        winner = alive_combatants[0]
+        st.error(
+            f"You were defeated! **{winner.name}** won the Free-For-All deathmatch."
+        )
     else:
-        st.error("You were defeated! Better luck next time.")
+        st.warning("It's a draw! Everyone was defeated simultaneously.")
 
     if st.button("Play Again", type="primary"):
         st.session_state.game_state = "setup"
