@@ -30,6 +30,7 @@ class Character:
         self.special_primed = (
             False  # Queued up to activate on the upcoming turn
         )
+        self.boost_active = False  # Increases crit chance by 15% for the next turn
 
         # Loadout moves chosen before battle
         self.loadout = []
@@ -63,12 +64,21 @@ CHAR_TEMPLATES = {
         "potency": 5,
         "desc": "Defense modifier RNG becomes (5-10) next turn",
     },
+    "D": {
+        "hp": 170,
+        "dmg": 5.5,
+        "def": 5.5,
+        "spe": 12,
+        "potency": 4,
+        "desc": "Heals 30 HP next turn",
+    },
 }
 
 ALL_MOVES = [
     "Attack",
     "Shield",
     "Heal",
+    "Boost",
     "Spread attack (3)",
     "Spread attack (2)",
 ]
@@ -108,7 +118,7 @@ if st.session_state.game_state == "setup":
             st.subheader("Select Your Character")
             player_char_key = st.selectbox(
                 "Character",
-                ["A", "B", "C"],
+                ["A", "B", "C", "D"],
                 format_func=lambda x: f"Character {x} (HP: {CHAR_TEMPLATES[x]['hp']}, SPE: {CHAR_TEMPLATES[x]['spe']})",
             )
             p_template = CHAR_TEMPLATES[player_char_key]
@@ -144,7 +154,7 @@ if st.session_state.game_state == "setup":
                 player.loadout = selected_moves
 
                 ai_names = ["eeny", "meeny", "teeny"]
-                ai_choices = ["A", "B", "C"]
+                ai_choices = ["A", "B", "C", "D"]
                 ai_list = []
                 for name in ai_names:
                     char_key = random.choice(ai_choices)
@@ -179,7 +189,7 @@ if st.session_state.game_state == "setup":
             with cols_cfg[i]:
                 st.markdown(f"### {name}")
                 char_choice = st.selectbox(
-                    f"Class", ["A", "B", "C"], key=f"manual_class_{i}"
+                    f"Class", ["A", "B", "C", "D"], key=f"manual_class_{i}"
                 )
                 st.caption(f"HP: {CHAR_TEMPLATES[char_choice]['hp']} | SPE: {CHAR_TEMPLATES[char_choice]['spe']}")
                 
@@ -243,6 +253,11 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
         if crit_roll > 20
         else (random.random() * 100 < crit_roll)
     )
+    
+    if attacker.boost_active:
+        if random.random() < 0.15:
+            is_crit = True
+        attacker.boost_active = False
 
     if is_crit:
         raw_dmg *= 2
@@ -272,6 +287,10 @@ def execute_action(actor_idx, action, target_indices, all_players):
             log_messages.append(f"✨ {attacker.name}'s Special is active: 1.5x damage boost!")
         elif "Char C" in attacker.name:
             log_messages.append(f"✨ {attacker.name}'s Special is active: Enhanced defense RNG!")
+        elif "Char D" in attacker.name:
+            heal_amt = 30.0
+            attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
+            log_messages.append(f"✨ {attacker.name}'s Special is active: Healed for **{heal_amt} HP**!")
 
     if attacker.potency_cooldown > 0:
         attacker.potency_cooldown -= 1
@@ -301,6 +320,10 @@ def execute_action(actor_idx, action, target_indices, all_players):
         heal_amt = round(attacker.max_hp * 0.2, 1)
         attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
         log_messages.append(f"💚 {attacker.name} healed for **{heal_amt} HP**.")
+
+    elif action == "Boost":
+        attacker.boost_active = True
+        log_messages.append(f"🔮 {attacker.name} uses Boost, increasing critical strike chance by 15% for next turn.")
 
     elif action == "Spread attack (3)":
         for p in all_players:
