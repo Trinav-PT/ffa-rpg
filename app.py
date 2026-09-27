@@ -333,18 +333,22 @@ if st.session_state.game_state == "battle":
         )
 
         if st.session_state.anim_index < len(st.session_state.anim_actions):
-            actor, action_to_take, targets_to_use = st.session_state.anim_actions[
+            actor, action_desc, targets_to_use = st.session_state.anim_actions[
                 st.session_state.anim_index
             ]
 
-            if actor.hp > 0:
-                action_logs = execute_action(
-                    actor,
-                    action_to_take,
-                    targets_to_use,
-                    st.session_state.players,
-                )
-                st.session_state.log.extend(action_logs)
+            if actor is None:
+                # Round header log entry
+                st.session_state.log.append(action_desc)
+            else:
+                if actor.hp > 0:
+                    action_logs = execute_action(
+                        actor,
+                        action_desc,
+                        targets_to_use,
+                        st.session_state.players,
+                    )
+                    st.session_state.log.extend(action_logs)
 
             st.session_state.anim_index += 1
             time.sleep(1.0)
