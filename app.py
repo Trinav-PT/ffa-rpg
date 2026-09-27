@@ -1,0 +1,365 @@
+import random
+import streamlit as st
+
+# Page Config
+st.set_page_config(
+    page_title="FFA Streamlit RPG", page_icon="⚔️", layout="wide"
+)
+
+# --- GAME DATA & CLASSES ---
+
+
+class Character:
+
+    def __init__(self, name, hp, dmg, defense, spe, potency, is_player=False):
+        self.name = name
+        self.max_hp = hp
+        self.hp = hp
+        self.dmg = dmg
+        self.defense = defense
+        self.spe = spe
+        self.max_potency = potency
+        self.potency_cooldown = 0
+        self.is_player = is_player
+
+        # Status modifiers for active turn
+        self.shield_active = False
+        self.special_active = False
+
+        # Loadout moves chosen before battle
+        self.loadout = []
+
+    def reset_status(self):
+        self.shield_active = False
+        self.special_active = False
+
+
+CHAR_TEMPLATES = {
+    "A": {
+        "hp": 500,
+        "dmg": 7.0,
+        "def": 6.0,
+        "spe": 10,
+        "potency": 4,
+        "desc": "Deals 1.5x more damage this turn",
+    },
+    "B": {
+        "hp": 250,
+        "dmg": 8.0,
+        "def": 5.0,
+        "spe": 18,
+        "potency": 2,
+        "desc": "50% chance to avoid all attacks this turn",
+    },
+    "C": {
+        "hp": 750,
+        "dmg": 7.5,
+        "def": 8.0,
+        "spe": 4,
+        "potency": 5,
+        "desc": "Defense modifier RNG becomes (5-10) for this turn",
+    },
+}
+
+ALL_MOVES = [
+    "Attack",
+    "Shield",
+    "Heal",
+    "Spread attack (3)",
+    "Spread attack (2)",
+]
+
+
+# --- INITIALIZE SESSION STATE ---
+if "game_state" not in st.session_state:
+    st.session_state.game_state = "setup"  # setup, loadout, battle, game_over
+    st.session_state.players = []
+    st.session_state.turn_queue = []
+    st.session_state.current_turn_index = 0
+    st.session_state.round_num = 1
+    st.session_state.log = []
+
+
+# --- UI: SETUP SCREEN ---
+if st.session_state.game_state == "setup":
+    st.title("⚔️ 4-Player FFA Streamlit RPG")
+    st.markdown(
+        "Welcome! Choose your character, pick 3 battle moves, and battle 3 AI opponents in a free-for-all deathmatch."
+    )
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("Select Your Character")
+        player_char_key = st.selectbox(
+            "Character",
+            ["A", "B", "C"],
+            format_func=lambda x: f"Character {x} (HP: {CHAR_TEMPLATES[x]['hp']}, SPE: {CHAR_TEMPLATES[x]['spe']})",
+        )
+        p_template = CHAR_TEMPLATES[player_char_key]
+
+        st.info(
+            f"""
+        * **HP:** {p_template['hp']}
+        * **DMG:** {p_template['dmg']} | **DEF:** {p_template['def']} | **SPE:** {p_template['spe']}
+        * **Special ({p_template['potency']} turns CD):** {p_template['desc']}
+        """
+        )
+
+    with col2:
+        st.subheader("Choose 3 Battle Moves")
+        selected_moves = []
+        for move in ALL_MOVES:
+            if st.checkbox(move, value=(move in ["Attack", "Shield", "Heal"])):
+                selected_moves.append(move)
+
+    if st.button(
+        "Proceed to Loadout / Start Battle",
+        type="primary",
+        use_container_width=True,
+    ):
+        if len(selected_moves) != 3:
+            st.error("Please select exactly **3** moves to bring into battle!")
+        else:
+            # Setup Player
+            p_data = CHAR_TEMPLATES[player_char_key]
+            player = Character(
+                name=f"Player (Char {player_char_key})",
+                hp=p_data["hp"],
+                dmg=p_data["dmg"],
+                defense=p_data["def"],
+                spe=p_data["spe"],
+                potency=p_data["potency"],
+                is_player=True,
+            )
+            player.loadout = selected_moves
+
+            # Setup 3 AI Opponents (randomly picked from A, B, C)
+            ai_choices = ["A", "B", "C"]
+            ai_list = []
+            for i in range(1, 4):
+                char_key = random.choice(ai_choices)
+                c_data = CHAR_TEMPLATES[char_key]
+                ai = Character(
+                    name=f"AI {i} (Char {char_key})",
+                    hp=c_data["hp"],
+                    dmg=c_data["dmg"],
+                    defense=c_data["def"],
+                    spe=c_data["spe"],
+                    potency=c_data["potency"],
+                    is_player=False,
+                )
+                ai.loadout = random.sample(ALL_MOVES, 3)
+                ai_list.append(ai)
+
+            st.session_state.players = [player] + ai_list
+            st.session_state.game_state = "battle"
+            st.session_state.log = [
+                "Battle started! May the best fighter win."
+            ]
+            st.rerun()
+
+# --- HELPER FUNCTIONS FOR COMBAT ---
+def calculate_damage(attacker, defender, base_multiplier=1.0):
+    # Defense check for Character C special
+    if defender.special_active and "Char C" in defender.name:
+        def_mod = random.randint(5, 10) * defender.defense
+    else:
+        def_mod = random.randint(0, 5) * defender.defense
+
+    raw_dmg = (random.randint(0, 10) * attacker.dmg) * base_multiplier
+
+    # Special multiplier for Character A
+    if attacker.special_active and "Char A" in attacker.name:
+        raw_dmg *= 1.5
+
+    # Crit check: rng(0-3) * SPE %
+    crit_roll = random.randint(0, 3) * attacker.spe
+    is_crit = random.choice([True, False]) if crit_roll > 20 else (random.random() * 100 < crit_roll)
+    
+    if is_crit:
+        raw_dmg *= 2
+
+    # Mitigation via defense & shield
+    final_dmg = max(1.0, raw_dmg - def_mod)
+    
+    if defender.shield_active:
+        final_dmg *= 0.5
+
+    return round(final_dmg, 1), is_crit
+
+def execute_action(attacker, action, target=None, all_players=None):
+    log_messages = []
+    
+    # Handle Potency/Special trigger if requested
+    special_msg = ""
+    if attacker.potency_cooldown == 0:
+        # Trigger special ability dynamically
+        attacker.special_active = True
+        attacker.potency_cooldown = attacker.max_potency
+        if "Char B" in attacker.name:
+            special_msg = f"✨ {attacker.name} activated Special: 50% dodge chance active!"
+        elif "Char A" in attacker.name:
+            special_msg = f"✨ {attacker.name} activated Special: 1.5x damage boost active!"
+        elif "Char C" in attacker.name:
+            special_msg = f"✨ {attacker.name} activated Special: Enhanced defense RNG active!"
+        log_messages.append(special_msg)
+
+    # Tick down cooldowns at turn start
+    if attacker.potency_cooldown > 0:
+        attacker.potency_cooldown -= 1
+
+    # Execute Selected Move
+    if action == "Attack":
+        if target:
+            # Check Char B evasion
+            if target.special_active and "Char B" in target.name and random.random() < 0.5:
+                log_messages.append(f"💨 {target.name} avoided {attacker.name}'s attack completely using Special!")
+            else:
+                dmg, crit = calculate_damage(attacker, target)
+                target.hp = max(0.0, target.hp - dmg)
+                crit_txt = " (CRITICAL HIT!)" if crit else ""
+                log_messages.append(f"⚔️ {attacker.name} attacked {target.name} for **{dmg} damage**{crit_txt}.")
+        
+    elif action == "Shield":
+        attacker.shield_active = True
+        log_messages.append(f"🛡️ {attacker.name} raised a Shield (incoming damage halved this turn).")
+        
+    elif action == "Heal":
+        heal_amt = round(attacker.max_hp * 0.2, 1)
+        attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
+        log_messages.append(f"💚 {attacker.name} healed for **{heal_amt} HP**.")
+        
+    elif action == "Spread attack (3)":
+        for p in all_players:
+            if p != attacker and p.hp > 0:
+                if p.special_active and "Char B" in p.name and random.random() < 0.5:
+                    log_messages.append(f"💨 {p.name} avoided {attacker.name}'s spread attack!")
+                    continue
+                dmg, crit = calculate_damage(attacker, p, base_multiplier=1/3)
+                p.hp = max(0.0, p.hp - dmg)
+                log_messages.append(f"💥 {attacker.name} hit {p.name} with Spread (3) for **{dmg} damage**.")
+                
+    elif action == "Spread attack (2)":
+        if target:
+            # Hit target + random second live opponent
+            other_targets = [p for p in all_players if p != attacker and p != target and p.hp > 0]
+            targets_hit = [target]
+            if other_targets:
+                targets_hit.append(random.choice(other_targets))
+            
+            for t in targets_hit:
+                if t.special_active and "Char B" in t.name and random.random() < 0.5:
+                    log_messages.append(f"💨 {t.name} avoided {attacker.name}'s spread attack!")
+                    continue
+                dmg, crit = calculate_damage(attacker, t, base_multiplier=1/2)
+                t.hp = max(0.0, t.hp - dmg)
+                log_messages.append(f"💥 {attacker.name} hit {t.name} with Spread (2) for **{dmg} damage**.")
+
+    return log_messages
+
+# --- UI: BATTLE SCREEN ---
+if st.session_state.game_state == "battle":
+    st.title("⚔️ FFA Battle Arena")
+
+    # Check Win/Loss conditions
+    alive_players = [p for p in st.session_state.players if p.hp > 0]
+    player_obj = st.session_state.players[0]
+
+    if len(alive_players) <= 1 or player_obj.hp <= 0:
+        st.session_state.game_state = "game_over"
+        st.rerun()
+
+    # Display Player Status Cards
+    cols = st.columns(4)
+    for idx, p in enumerate(st.session_state.players):
+        with cols[idx]:
+            status_color = "green" if p.hp > 0 else "red"
+            st.markdown(f"### {p.name}")
+            st.markdown(f"**HP:** `{p.hp}/{p.max_hp}`")
+            st.progress(float(p.hp / p.max_hp))
+            st.caption(f"SPE: {p.spe} | Potency CD: {p.potency_cooldown}")
+
+    st.divider()
+
+    # Initialize Turn Order Queue if empty or new round
+    if not st.session_state.turn_queue:
+        # Sort by speed descending; coin toss (shuffle) if speeds match
+        living_combatants = [p for p in st.session_state.players if p.hp > 0]
+        # Shuffle first so ties are randomized, then sort by speed
+        random.shuffle(living_combatants)
+        living_combatants.sort(key=lambda x: x.spe, reverse=True)
+        st.session_state.turn_queue = living_combatants
+        st.session_state.current_turn_index = 0
+
+    current_actor = st.session_state.turn_queue[st.session_state.current_turn_index]
+
+    # Reset actor status at the start of their turn
+    current_actor.reset_status()
+
+    st.subheader(f"Turn: {current_actor.name}")
+
+    if current_actor.is_player:
+        # Player Turn Control
+        st.markdown("Choose your action for this turn:")
+        chosen_move = st.selectbox("Select Move", player_obj.loadout)
+
+        target_options = [p for p in st.session_state.players if p != player_obj and p.hp > 0]
+        target = None
+        if chosen_move in ["Attack", "Spread attack (2)"]:
+            target = st.selectbox(
+                "Select Target", target_options, format_func=lambda x: x.name
+            )
+
+        if st.button("Execute Move", type="primary"):
+            logs = execute_action(current_actor, chosen_move, target, st.session_state.players)
+            st.session_state.log.extend(logs)
+            
+            # Advance Turn
+            st.session_state.current_turn_index += 1
+            if st.session_state.current_turn_index >= len(st.session_state.turn_queue):
+                st.session_state.turn_queue = []
+                st.session_state.round_num += 1
+            st.rerun()
+
+    else:
+        # AI Turn Logic
+        st.info(f"{current_actor.name} is taking their turn...")
+        valid_moves = current_actor.loadout
+        chosen_move = random.choice(valid_moves)
+        
+        living_opponents = [p for p in st.session_state.players if p != current_actor and p.hp > 0]
+        target = random.choice(living_opponents) if living_opponents else None
+
+        if st.button("Process AI Turn"):
+            logs = execute_action(current_actor, chosen_move, target, st.session_state.players)
+            st.session_state.log.extend(logs)
+
+            # Advance Turn
+            st.session_state.current_turn_index += 1
+            if st.session_state.current_turn_index >= len(st.session_state.turn_queue):
+                st.session_state.turn_queue = []
+                st.session_state.round_num += 1
+            st.rerun()
+
+    # Battle Log Sidebar / Expandable
+    with st.expander("📜 Battle Log", expanded=True):
+        for log_entry in reversed(st.session_state.log[-10:]):
+            st.text(log_entry)
+
+# --- UI: GAME OVER SCREEN ---
+if st.session_state.game_state == "game_over":
+    st.title("🏆 Battle Concluded!")
+    
+    player_obj = st.session_state.players[0]
+    if player_obj.hp > 0:
+        st.success("Congratulations! You emerged victorious in the Free-For-All!")
+    else:
+        st.error("You were defeated! Better luck next time.")
+
+    if st.button("Play Again", type="primary"):
+        st.session_state.game_state = "setup"
+        st.session_state.players = []
+        st.session_state.turn_queue = []
+        st.session_state.log = []
+        st.rerun()
