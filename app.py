@@ -193,7 +193,6 @@ if st.session_state.game_state == "setup":
                 manual_configs.append((name, char_choice, player_moves))
 
         if st.button("Start 4-Way Manual Battle", type="primary", use_container_width=True):
-            # Validate move counts
             invalid_loadout = False
             for name, char_key, p_moves in manual_configs:
                 if len(p_moves) != 3:
@@ -392,9 +391,6 @@ if st.session_state.game_state == "battle":
             st.session_state.game_state = "game_over"
             st.rerun()
 
-        # Find next living combatant needing input
-        living_indices = [i for i, p in enumerate(st.session_state.players) if p.hp > 0]
-        
         # Advance manual input index until it points to a living player who hasn't submitted yet
         while (
             st.session_state.manual_input_index < len(st.session_state.players)
@@ -406,7 +402,6 @@ if st.session_state.game_state == "battle":
             st.session_state.manual_input_index += 1
 
         if st.session_state.manual_input_index >= len(st.session_state.players):
-            # All living players have chosen their moves! Compile and start animation.
             round_actions = [(None, f"--- Round {st.session_state.round_num} ---", [])]
             
             actor_action_pairs = []
@@ -425,7 +420,6 @@ if st.session_state.game_state == "battle":
             for actor_idx, action_to_take, target_indices_to_use in actor_action_pairs:
                 round_actions.append((actor_idx, action_to_take, target_indices_to_use))
 
-            # Clear shields before round execution starts
             for p in st.session_state.players:
                 p.reset_status()
 
@@ -439,37 +433,38 @@ if st.session_state.game_state == "battle":
 
         st.subheader(f"🎮 Turn Input: {current_actor.name}")
         
+        # Move choice outside form so target pickers update live
+        chosen_move = st.selectbox("Select Move", current_actor.loadout, key=f"move_{current_actor_idx}")
+
+        target_options_indices = [
+            i for i, p in enumerate(st.session_state.players) if i != current_actor_idx and p.hp > 0
+        ]
+        target_indices = []
+
+        if chosen_move == "Attack":
+            if target_options_indices:
+                t_idx = st.selectbox(
+                    "Select Target",
+                    target_options_indices,
+                    format_func=lambda i: st.session_state.players[i].name,
+                    key=f"target_atk_{current_actor_idx}"
+                )
+                target_indices = [t_idx]
+        elif chosen_move == "Spread attack (2)":
+            if len(target_options_indices) >= 2:
+                selected_ts = st.multiselect(
+                    "Select exactly 2 targets",
+                    target_options_indices,
+                    format_func=lambda i: st.session_state.players[i].name,
+                    max_selections=2,
+                    key=f"target_sp2_{current_actor_idx}"
+                )
+                target_indices = selected_ts
+            elif len(target_options_indices) == 1:
+                st.info("Only 1 opponent left! They will be targeted automatically.")
+                target_indices = target_options_indices
+
         with st.form(key=f"input_form_{current_actor_idx}"):
-            chosen_move = st.selectbox("Select Move", current_actor.loadout, key=f"move_{current_actor_idx}")
-
-            target_options_indices = [
-                i for i, p in enumerate(st.session_state.players) if i != current_actor_idx and p.hp > 0
-            ]
-            target_indices = []
-
-            if chosen_move == "Attack":
-                if target_options_indices:
-                    t_idx = st.selectbox(
-                        "Select Target",
-                        target_options_indices,
-                        format_func=lambda i: st.session_state.players[i].name,
-                        key=f"target_atk_{current_actor_idx}"
-                    )
-                    target_indices = [t_idx]
-            elif chosen_move == "Spread attack (2)":
-                if len(target_options_indices) >= 2:
-                    selected_ts = st.multiselect(
-                        "Select exactly 2 targets",
-                        target_options_indices,
-                        format_func=lambda i: st.session_state.players[i].name,
-                        max_selections=2,
-                        key=f"target_sp2_{current_actor_idx}"
-                    )
-                    target_indices = selected_ts
-                elif len(target_options_indices) == 1:
-                    st.info("Only 1 opponent left! They will be targeted automatically.")
-                    target_indices = target_options_indices
-
             submitted = st.form_submit_button("Lock In Move", type="primary")
             if submitted:
                 if chosen_move == "Spread attack (2)" and len(target_indices) != min(2, len(target_options_indices)):
