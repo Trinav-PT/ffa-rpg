@@ -37,7 +37,7 @@ class Character:
 
 CHAR_TEMPLATES = {
     "A": {
-        "hp": 25,
+        "hp": 45,
         "dmg": 7.0,
         "def": 6.0,
         "spe": 10,
@@ -45,7 +45,7 @@ CHAR_TEMPLATES = {
         "desc": "Deals 1.5x more damage this turn",
     },
     "B": {
-        "hp": 45,
+        "hp": 25,
         "dmg": 8.0,
         "def": 5.0,
         "spe": 18,
