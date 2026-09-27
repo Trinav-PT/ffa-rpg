@@ -55,7 +55,7 @@ CHAR_TEMPLATES = {
         "desc": "50% chance to avoid all attacks next turn",
     },
     "C": {
-        "hp": 195,
+        "hp": 190,  # Balance Patch: Reduced from 195 to 190
         "dmg": 6.5,
         "def": 8.0,
         "spe": 4,
@@ -68,7 +68,7 @@ CHAR_TEMPLATES = {
         "def": 5.5,
         "spe": 12,
         "potency": 4,
-        "desc": "Heals 20 HP next turn",
+        "desc": "Heals 25 HP next turn",  # Balance Patch description update
     },
 }
 
@@ -214,7 +214,7 @@ def execute_action(actor_idx, action, target_indices, all_players):
         elif "Char C" in attacker.name:
             log_messages.append(f"✨ {attacker.name}'s Special is active: Enhanced defense RNG!")
         elif "Char D" in attacker.name:
-            heal_amt = 20.0
+            heal_amt = 25.0  # Balance Patch: Class D special heal increased to 25
             attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
             log_messages.append(f"✨ {attacker.name}'s Special is active: Healed for **{heal_amt} HP**!")
 
@@ -248,7 +248,8 @@ def execute_action(actor_idx, action, target_indices, all_players):
         else:
             target = attacker
         
-        heal_amt = round(target.max_hp * 0.2, 1)
+        # Balance Patch: Class D base heal increased to 25 (or keeps scaling with max HP, but here set to flat 25 per balance rule)
+        heal_amt = 25.0 if "Char D" in target.name else round(target.max_hp * 0.2, 1)
         target.hp = min(target.max_hp, target.hp + heal_amt)
         if target == attacker:
             log_messages.append(f"💚 {attacker.name} healed themselves for **{heal_amt} HP**.")
@@ -325,7 +326,7 @@ if st.session_state.game_state == "battle":
             time.sleep(1.0)
             st.rerun()
         else:
-            hp_summary = "   📋 End of Round HP: " + ", ".join(
+            hp_summary = "    📋 End of Round HP: " + ", ".join(
                 [f"{p.name.split(' (')[0]}: {p.hp}/{p.max_hp}" for p in st.session_state.players]
             )
             st.session_state.log.append(hp_summary)
