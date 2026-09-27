@@ -36,7 +36,7 @@ class Character:
 
 CHAR_TEMPLATES = {
     "A": {
-        "hp": 500,
+        "hp": 30,
         "dmg": 7.0,
         "def": 6.0,
         "spe": 10,
@@ -44,7 +44,7 @@ CHAR_TEMPLATES = {
         "desc": "Deals 1.5x more damage this turn",
     },
     "B": {
-        "hp": 250,
+        "hp": 15,
         "dmg": 8.0,
         "def": 5.0,
         "spe": 18,
@@ -52,7 +52,7 @@ CHAR_TEMPLATES = {
         "desc": "50% chance to avoid all attacks this turn",
     },
     "C": {
-        "hp": 750,
+        "hp": 45,
         "dmg": 7.5,
         "def": 8.0,
         "spe": 4,
@@ -72,10 +72,8 @@ ALL_MOVES = [
 
 # --- INITIALIZE SESSION STATE ---
 if "game_state" not in st.session_state:
-    st.session_state.game_state = "setup"  # setup, loadout, battle, game_over
+    st.session_state.game_state = "setup"  # setup, battle, game_over
     st.session_state.players = []
-    st.session_state.turn_queue = []
-    st.session_state.current_turn_index = 0
     st.session_state.round_num = 1
     st.session_state.log = []
 
@@ -84,7 +82,7 @@ if "game_state" not in st.session_state:
 if st.session_state.game_state == "setup":
     st.title("⚔️ 4-Player FFA Streamlit RPG")
     st.markdown(
-        "Welcome! Choose your character, pick 3 battle moves, and battle 3 AI opponents in a free-for-all deathmatch."
+        "Welcome! Choose your character, pick 3 battle moves, and battle 3 AI opponents in a simultaneous turn-based free-for-all deathmatch."
     )
 
     col1, col2 = st.columns([1, 1])
@@ -114,7 +112,7 @@ if st.session_state.game_state == "setup":
                 selected_moves.append(move)
 
     if st.button(
-        "Proceed to Loadout / Start Battle",
+        "Start Battle",
         type="primary",
         use_container_width=True,
     ):
@@ -154,6 +152,7 @@ if st.session_state.game_state == "setup":
 
             st.session_state.players = [player] + ai_list
             st.session_state.game_state = "battle"
+            st.session_state.round_num = 1
             st.session_state.log = [
                 "Battle started! May the best fighter win."
             ]
@@ -175,92 +174,122 @@ def calculate_damage(attacker, defender, base_multiplier=1.0):
 
     # Crit check: rng(0-3) * SPE %
     crit_roll = random.randint(0, 3) * attacker.spe
-    is_crit = random.choice([True, False]) if crit_roll > 20 else (random.random() * 100 < crit_roll)
-    
+    is_crit = (
+        random.choice([True, False])
+        if crit_roll > 20
+        else (random.random() * 100 < crit_roll)
+    )
+
     if is_crit:
         raw_dmg *= 2
 
     # Mitigation via defense & shield
     final_dmg = max(1.0, raw_dmg - def_mod)
-    
+
     if defender.shield_active:
         final_dmg *= 0.5
 
     return round(final_dmg, 1), is_crit
 
-def execute_action(attacker, action, target=None, all_players=None):
+
+def execute_action(attacker, action, targets, all_players):
     log_messages = []
-    
-    # Handle Potency/Special trigger if requested
-    special_msg = ""
-    if attacker.potency_cooldown == 0:
-        # Trigger special ability dynamically
-        attacker.special_active = True
-        attacker.potency_cooldown = attacker.max_potency
-        if "Char B" in attacker.name:
-            special_msg = f"✨ {attacker.name} activated Special: 50% dodge chance active!"
-        elif "Char A" in attacker.name:
-            special_msg = f"✨ {attacker.name} activated Special: 1.5x damage boost active!"
-        elif "Char C" in attacker.name:
-            special_msg = f"✨ {attacker.name} activated Special: Enhanced defense RNG active!"
-        log_messages.append(special_msg)
 
     # Tick down cooldowns at turn start
     if attacker.potency_cooldown > 0:
         attacker.potency_cooldown -= 1
 
+    # Handle Potency/Special trigger if ready
+    if attacker.potency_cooldown == 0:
+        attacker.special_active = True
+        attacker.potency_cooldown = attacker.max_potency
+        if "Char B" in attacker.name:
+            log_messages.append(
+                f"✨ {attacker.name} activated Special: 50% dodge chance active!"
+            )
+        elif "Char A" in attacker.name:
+            log_messages.append(
+                f"✨ {attacker.name} activated Special: 1.5x damage boost active!"
+            )
+        elif "Char C" in attacker.name:
+            log_messages.append(
+                f"✨ {attacker.name} activated Special: Enhanced defense RNG active!"
+            )
+
     # Execute Selected Move
     if action == "Attack":
-        if target:
-            # Check Char B evasion
-            if target.special_active and "Char B" in target.name and random.random() < 0.5:
-                log_messages.append(f"💨 {target.name} avoided {attacker.name}'s attack completely using Special!")
-            else:
-                dmg, crit = calculate_damage(attacker, target)
-                target.hp = max(0.0, target.hp - dmg)
-                crit_txt = " (CRITICAL HIT!)" if crit else ""
-                log_messages.append(f"⚔️ {attacker.name} attacked {target.name} for **{dmg} damage**{crit_txt}.")
-        
+        if targets:
+            target = targets[0]
+            if target.hp > 0:
+                if (
+                    target.special_active
+                    and "Char B" in target.name
+                    and random.random() < 0.5
+                ):
+                    log_messages.append(
+                        f"💨 {target.name} avoided {attacker.name}'s attack completely using Special!"
+                    )
+                else:
+                    dmg, crit = calculate_damage(attacker, target)
+                    target.hp = max(0.0, target.hp - dmg)
+                    crit_txt = " (CRITICAL HIT!)" if crit else ""
+                    log_messages.append(
+                        f"⚔️ {attacker.name} attacked {target.name} for **{dmg} damage**{crit_txt}."
+                    )
+
     elif action == "Shield":
         attacker.shield_active = True
-        log_messages.append(f"🛡️ {attacker.name} raised a Shield (incoming damage halved this turn).")
-        
+        log_messages.append(
+            f"🛡️ {attacker.name} raised a Shield (incoming damage halved this turn)."
+        )
+
     elif action == "Heal":
         heal_amt = round(attacker.max_hp * 0.2, 1)
         attacker.hp = min(attacker.max_hp, attacker.hp + heal_amt)
         log_messages.append(f"💚 {attacker.name} healed for **{heal_amt} HP**.")
-        
+
     elif action == "Spread attack (3)":
         for p in all_players:
             if p != attacker and p.hp > 0:
-                if p.special_active and "Char B" in p.name and random.random() < 0.5:
-                    log_messages.append(f"💨 {p.name} avoided {attacker.name}'s spread attack!")
+                if (
+                    p.special_active
+                    and "Char B" in p.name
+                    and random.random() < 0.5
+                ):
+                    log_messages.append(
+                        f"💨 {p.name} avoided {attacker.name}'s spread attack!"
+                    )
                     continue
-                dmg, crit = calculate_damage(attacker, p, base_multiplier=1/3)
+                dmg, crit = calculate_damage(attacker, p, base_multiplier=1 / 3)
                 p.hp = max(0.0, p.hp - dmg)
-                log_messages.append(f"💥 {attacker.name} hit {p.name} with Spread (3) for **{dmg} damage**.")
-                
+                log_messages.append(
+                    f"💥 {attacker.name} hit {p.name} with Spread (3) for **{dmg} damage**."
+                )
+
     elif action == "Spread attack (2)":
-        if target:
-            # Hit target + random second live opponent
-            other_targets = [p for p in all_players if p != attacker and p != target and p.hp > 0]
-            targets_hit = [target]
-            if other_targets:
-                targets_hit.append(random.choice(other_targets))
-            
-            for t in targets_hit:
-                if t.special_active and "Char B" in t.name and random.random() < 0.5:
-                    log_messages.append(f"💨 {t.name} avoided {attacker.name}'s spread attack!")
+        for t in targets:
+            if t.hp > 0:
+                if (
+                    t.special_active
+                    and "Char B" in t.name
+                    and random.random() < 0.5
+                ):
+                    log_messages.append(
+                        f"💨 {t.name} avoided {attacker.name}'s spread attack!"
+                    )
                     continue
-                dmg, crit = calculate_damage(attacker, t, base_multiplier=1/2)
+                dmg, crit = calculate_damage(attacker, t, base_multiplier=1 / 2)
                 t.hp = max(0.0, t.hp - dmg)
-                log_messages.append(f"💥 {attacker.name} hit {t.name} with Spread (2) for **{dmg} damage**.")
+                log_messages.append(
+                    f"💥 {attacker.name} hit {t.name} with Spread (2) for **{dmg} damage**."
+                )
 
     return log_messages
 
+
 # --- UI: BATTLE SCREEN ---
 if st.session_state.game_state == "battle":
-    st.title("⚔️ FFA Battle Arena")
+    st.title(f"⚔️ FFA Battle Arena — Round {st.session_state.round_num}")
 
     # Check Win/Loss conditions
     alive_players = [p for p in st.session_state.players if p.hp > 0]
@@ -274,83 +303,94 @@ if st.session_state.game_state == "battle":
     cols = st.columns(4)
     for idx, p in enumerate(st.session_state.players):
         with cols[idx]:
-            status_color = "green" if p.hp > 0 else "red"
             st.markdown(f"### {p.name}")
             st.markdown(f"**HP:** `{p.hp}/{p.max_hp}`")
-            st.progress(float(p.hp / p.max_hp))
+            st.progress(float(max(0.0, p.hp) / p.max_hp))
             st.caption(f"SPE: {p.spe} | Potency CD: {p.potency_cooldown}")
 
     st.divider()
 
-    # Initialize Turn Order Queue if empty or new round
-    if not st.session_state.turn_queue:
-        # Sort by speed descending; coin toss (shuffle) if speeds match
-        living_combatants = [p for p in st.session_state.players if p.hp > 0]
-        # Shuffle first so ties are randomized, then sort by speed
-        random.shuffle(living_combatants)
-        living_combatants.sort(key=lambda x: x.spe, reverse=True)
-        st.session_state.turn_queue = living_combatants
-        st.session_state.current_turn_index = 0
+    # Player Turn Input Controls
+    st.subheader("Your Action This Turn")
+    chosen_move = st.selectbox("Select Move", player_obj.loadout)
 
-    current_actor = st.session_state.turn_queue[st.session_state.current_turn_index]
+    target_options = [
+        p for p in st.session_state.players if p != player_obj and p.hp > 0
+    ]
+    player_targets = []
 
-    # Reset actor status at the start of their turn
-    current_actor.reset_status()
-
-    st.subheader(f"Turn: {current_actor.name}")
-
-    if current_actor.is_player:
-        # Player Turn Control
-        st.markdown("Choose your action for this turn:")
-        chosen_move = st.selectbox("Select Move", player_obj.loadout)
-
-        target_options = [p for p in st.session_state.players if p != player_obj and p.hp > 0]
-        target = None
-        if chosen_move in ["Attack", "Spread attack (2)"]:
-            target = st.selectbox(
-                "Select Target", target_options, format_func=lambda x: x.name
+    if chosen_move == "Attack":
+        if target_options:
+            t = st.selectbox("Select Target", target_options, format_func=lambda x: x.name)
+            player_targets = [t]
+    elif chosen_move == "Spread attack (2)":
+        if len(target_options) >= 2:
+            selected_ts = st.multiselect(
+                "Select exactly 2 targets",
+                target_options,
+                format_func=lambda x: x.name,
+                max_selections=2,
             )
+            player_targets = selected_ts
+        elif len(target_options) == 1:
+            st.info("Only 1 opponent left! They will be targeted.")
+            player_targets = target_options
+        else:
+            player_targets = []
 
-        if st.button("Execute Move", type="primary"):
-            logs = execute_action(current_actor, chosen_move, target, st.session_state.players)
-            st.session_state.log.extend(logs)
-            
-            # Advance Turn
-            st.session_state.current_turn_index += 1
-            if st.session_state.current_turn_index >= len(st.session_state.turn_queue):
-                st.session_state.turn_queue = []
-                st.session_state.round_num += 1
-            st.rerun()
+    if st.button("Submit Move & Execute Round", type="primary", use_container_width=True):
+        if chosen_move == "Spread attack (2)" and len(player_targets) != min(2, len(target_options)):
+            st.error("Please select exactly **2 targets** for your Spread Attack (2)!")
+        else:
+            # Prepare turn queue for the whole round based on SPE (Shuffled first for random coin-toss tie break)
+            living_combatants = [p for p in st.session_state.players if p.hp > 0]
+            random.shuffle(living_combatants)
+            living_combatants.sort(key=lambda x: x.spe, reverse=True)
 
-    else:
-        # AI Turn Logic
-        st.info(f"{current_actor.name} is taking their turn...")
-        valid_moves = current_actor.loadout
-        chosen_move = random.choice(valid_moves)
-        
-        living_opponents = [p for p in st.session_state.players if p != current_actor and p.hp > 0]
-        target = random.choice(living_opponents) if living_opponents else None
+            round_logs = [f"--- Round {st.session_state.round_num} ---"]
 
-        if st.button("Process AI Turn"):
-            logs = execute_action(current_actor, chosen_move, target, st.session_state.players)
-            st.session_state.log.extend(logs)
+            # Clear status flags before round execution
+            for p in st.session_state.players:
+                p.reset_status()
 
-            # Advance Turn
-            st.session_state.current_turn_index += 1
-            if st.session_state.current_turn_index >= len(st.session_state.turn_queue):
-                st.session_state.turn_queue = []
-                st.session_state.round_num += 1
+            # Execute actions in speed order simultaneously
+            for actor in living_combatants:
+                if actor.hp <= 0:
+                    continue
+
+                if actor.is_player:
+                    action_to_take = chosen_move
+                    targets_to_use = player_targets
+                else:
+                    # AI logic
+                    action_to_take = random.choice(actor.loadout)
+                    valid_ai_targets = [
+                        p for p in st.session_state.players if p != actor and p.hp > 0
+                    ]
+                    if action_to_take == "Attack":
+                        targets_to_use = [random.choice(valid_ai_targets)] if valid_ai_targets else []
+                    elif action_to_take == "Spread attack (2)":
+                        targets_to_use = random.sample(valid_ai_targets, min(2, len(valid_ai_targets)))
+                    else:
+                        targets_to_use = []
+
+                # Run action
+                action_logs = execute_action(actor, action_to_take, targets_to_use, st.session_state.players)
+                round_logs.extend(action_logs)
+
+            st.session_state.log.extend(round_logs)
+            st.session_state.round_num += 1
             st.rerun()
 
     # Battle Log Sidebar / Expandable
     with st.expander("📜 Battle Log", expanded=True):
-        for log_entry in reversed(st.session_state.log[-10:]):
+        for log_entry in reversed(st.session_state.log[-15:]):
             st.text(log_entry)
 
 # --- UI: GAME OVER SCREEN ---
 if st.session_state.game_state == "game_over":
     st.title("🏆 Battle Concluded!")
-    
+
     player_obj = st.session_state.players[0]
     if player_obj.hp > 0:
         st.success("Congratulations! You emerged victorious in the Free-For-All!")
@@ -360,6 +400,5 @@ if st.session_state.game_state == "game_over":
     if st.button("Play Again", type="primary"):
         st.session_state.game_state = "setup"
         st.session_state.players = []
-        st.session_state.turn_queue = []
         st.session_state.log = []
         st.rerun()
