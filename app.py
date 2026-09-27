@@ -102,9 +102,8 @@ if st.session_state.game_state == "setup":
         ],
     )
 
-    col1, col2 = st.columns([1, 1])
-
     if "Singleplayer" in game_mode:
+        col1, col2 = st.columns([1, 1])
         with col1:
             st.subheader("Select Your Character")
             player_char_key = st.selectbox(
@@ -171,45 +170,60 @@ if st.session_state.game_state == "setup":
                 st.session_state.temp_round_actions = {}
                 st.rerun()
     else:
-        st.subheader("Configure 4 Manual Combatants")
+        st.subheader("Configure 4 Manual Combatants & Their Loadouts")
         combatant_names = ["Gemini", "ChatGPT", "Perplexity", "DeepSeek"]
         manual_configs = []
 
         cols_cfg = st.columns(4)
         for i, name in enumerate(combatant_names):
             with cols_cfg[i]:
-                st.markdown(f"**{name}**")
+                st.markdown(f"### {name}")
                 char_choice = st.selectbox(
                     f"Class", ["A", "B", "C"], key=f"manual_class_{i}"
                 )
                 st.caption(f"HP: {CHAR_TEMPLATES[char_choice]['hp']} | SPE: {CHAR_TEMPLATES[char_choice]['spe']}")
-                manual_configs.append((name, char_choice))
+                
+                st.markdown("**Choose 3 Moves:**")
+                player_moves = []
+                for move in ALL_MOVES:
+                    default_checked = (move in ["Attack", "Shield", "Heal"]) if i != 1 else (move in ["Attack", "Shield", "Spread attack (3)"])
+                    if st.checkbox(move, value=default_checked, key=f"manual_move_{i}_{move}"):
+                        player_moves.append(move)
+                
+                manual_configs.append((name, char_choice, player_moves))
 
         if st.button("Start 4-Way Manual Battle", type="primary", use_container_width=True):
-            players_list = []
-            for i, (name, char_key) in enumerate(manual_configs):
-                c_data = CHAR_TEMPLATES[char_key]
-                c_obj = Character(
-                    name=f"{name} (Char {char_key})",
-                    hp=c_data["hp"],
-                    dmg=c_data["dmg"],
-                    defense=c_data["def"],
-                    spe=c_data["spe"],
-                    potency=c_data["potency"],
-                    is_player=True,  # All 4 are manual/players here
-                )
-                # Give default full loadout or sample
-                c_obj.loadout = ["Attack", "Shield", "Heal"] if char_key != "B" else ["Attack", "Shield", "Spread attack (3)"]
-                players_list.append(c_obj)
+            # Validate move counts
+            invalid_loadout = False
+            for name, char_key, p_moves in manual_configs:
+                if len(p_moves) != 3:
+                    st.error(f"{name} must have exactly **3** moves selected (currently has {len(p_moves)}).")
+                    invalid_loadout = True
 
-            st.session_state.players = players_list
-            st.session_state.game_state = "battle"
-            st.session_state.battle_phase = "input"
-            st.session_state.round_num = 1
-            st.session_state.log = ["4-Way AI Deathmatch started! Choose your moves wisely."]
-            st.session_state.manual_input_index = 0
-            st.session_state.temp_round_actions = {}
-            st.rerun()
+            if not invalid_loadout:
+                players_list = []
+                for name, char_key, p_moves in manual_configs:
+                    c_data = CHAR_TEMPLATES[char_key]
+                    c_obj = Character(
+                        name=f"{name} (Char {char_key})",
+                        hp=c_data["hp"],
+                        dmg=c_data["dmg"],
+                        defense=c_data["def"],
+                        spe=c_data["spe"],
+                        potency=c_data["potency"],
+                        is_player=True,
+                    )
+                    c_obj.loadout = p_moves
+                    players_list.append(c_obj)
+
+                st.session_state.players = players_list
+                st.session_state.game_state = "battle"
+                st.session_state.battle_phase = "input"
+                st.session_state.round_num = 1
+                st.session_state.log = ["4-Way AI Deathmatch started! Choose your moves wisely."]
+                st.session_state.manual_input_index = 0
+                st.session_state.temp_round_actions = {}
+                st.rerun()
 
 
 # --- HELPER FUNCTIONS FOR COMBAT ---
