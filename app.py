@@ -329,7 +329,7 @@ if st.session_state.game_state == "battle":
     # --- ANIMATION PHASE (Step-by-step resolution) ---
     if st.session_state.battle_phase == "animating":
         st.info(
-            "🎬 Resolving round actions sequentially in speed order..."
+            "🎬 Resolving round actions sequentially in priority/speed order..."
         )
 
         if st.session_state.anim_index < len(st.session_state.anim_actions):
@@ -427,26 +427,17 @@ if st.session_state.game_state == "battle":
                     "Please select exactly **2 targets** for your Spread Attack (2)!"
                 )
             else:
-                # Prepare speed queue
                 living_combatants = [
                     p for p in st.session_state.players if p.hp > 0
                 ]
-                random.shuffle(living_combatants)
-                living_combatants.sort(key=lambda x: x.spe, reverse=True)
-
                 round_actions = []
+
                 # Clear shields before round
                 for p in st.session_state.players:
                     p.reset_status()
 
-                round_actions.append(
-                    (
-                        None,
-                        f"--- Round {st.session_state.round_num} ---",
-                        [],
-                    )
-                )
-
+                # Determine actions for everyone first to check priority
+                actor_action_pairs = []
                 for actor in living_combatants:
                     if actor.is_player:
                         action_to_take = chosen_move
@@ -472,9 +463,30 @@ if st.session_state.game_state == "battle":
                         else:
                             targets_to_use = []
 
-                    round_actions.append(
+                    actor_action_pairs.append(
                         (actor, action_to_take, targets_to_use)
                     )
+
+                # Sort: Shield moves ALWAYS go first (priority 1 vs 0), tie-broken by speed
+                random.shuffle(actor_action_pairs)
+                actor_action_pairs.sort(
+                    key=lambda item: (
+                        1 if item[1] == "Shield" else 0,
+                        item[0].spe,
+                    ),
+                    reverse=True,
+                )
+
+                round_actions.append(
+                    (
+                        None,
+                        f"--- Round {st.session_state.round_num} ---",
+                        [],
+                    )
+                )
+
+                for actor, action_to_take, targets_to_use in actor_action_pairs:
+                    round_actions.append((actor, action_to_take, targets_to_use))
 
                 st.session_state.anim_actions = round_actions
                 st.session_state.anim_index = 0
